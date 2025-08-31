@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 )
 
 // Handler is a chainable [http.Handler] implementation.
@@ -19,10 +21,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Middleware is a function that wraps a [Handler] with additional functionality.
+type Middleware func(Handler) Handler
+
 // ServeMux adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
 type ServeMux struct {
-	m *http.ServeMux
-	r Responder
+	m   *http.ServeMux
+	r   Responder
+	mws []Middleware
 }
 
 // NewServeMux returns a new [ServeMux] that logs errors using the provided logger and function.
@@ -36,18 +42,12 @@ func NewServeMux(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *sl
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { mux.m.ServeHTTP(w, r) }
 
+// Use adds the given middlewares to the [ServeMux].
+func (mux *ServeMux) Use(mws ...Middleware) { mux.mws = append(mux.mws, mws...) }
+
 // Handle registers the handler for the given pattern and responding with the [Responder] provided in [NewServeMux].
 func (mux *ServeMux) Handle(pattern string, handler func(Responder) Handler) {
-	mux.m.Handle(pattern, handler(mux.r))
-}
-
-func (mux *ServeMux) handle(method, pattern string, handler func(Responder) Handler) {
-	switch method {
-	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
-	default:
-		panic(fmt.Errorf("invalid method %q", method))
-	}
-	mux.Handle(method+" "+pattern, handler)
+	mux.m.Handle(pattern, chain(handler(mux.r), mux.mws...))
 }
 
 // Get registers a GET handler for the given pattern responding with the [Responder] provided in [NewServeMux].
@@ -73,6 +73,47 @@ func (mux *ServeMux) Delete(pattern string, handler func(Responder) Handler) {
 // Patch registers a PATCH handler for the given pattern responding with the [Responder] provided in [NewServeMux].
 func (mux *ServeMux) Patch(pattern string, handler func(Responder) Handler) {
 	mux.handle(http.MethodPatch, pattern, handler)
+}
+
+// Group creates a new [ServeMux] with the given prefix and middlewares.
+func (mux *ServeMux) Group(prefix string, mws ...Middleware) *ServeMux {
+	if prefix == "" {
+		return mux
+	}
+
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	prefix = strings.TrimPrefix(prefix, "/")
+
+	child := &ServeMux{
+		m:   http.NewServeMux(),
+		r:   mux.r,
+		mws: append(append([]Middleware{}, mux.mws...), mws...),
+	}
+
+	mux.m.Handle(prefix+"/", http.StripPrefix(prefix, child))
+
+	return child
+}
+
+func chain(h Handler, mws ...Middleware) Handler {
+	if len(mws) > 0 {
+		for _, mw := range slices.Backward(mws) {
+			h = mw(h)
+		}
+	}
+	return h
+}
+
+func (mux *ServeMux) handle(method, pattern string, handler func(Responder) Handler) {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+	default:
+		panic(fmt.Errorf("invalid method %q", method))
+	}
+	mux.Handle(method+" "+pattern, handler)
 }
 
 // Responder provides helpers to write HTTP responses.
