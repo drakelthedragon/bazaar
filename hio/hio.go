@@ -21,8 +21,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Middleware is a function that wraps a [Handler] with additional functionality.
-type Middleware func(Handler) Handler
+// Middleware is a function that wraps a [http.Handler] with additional functionality.
+type Middleware func(http.Handler) http.Handler
 
 // ServeMux adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
 type ServeMux struct {
@@ -98,7 +98,7 @@ func (mux *ServeMux) Group(prefix string, mws ...Middleware) *ServeMux {
 	return child
 }
 
-func chain(h Handler, mws ...Middleware) Handler {
+func chain(h http.Handler, mws ...Middleware) http.Handler {
 	if len(mws) > 0 {
 		for _, mw := range slices.Backward(mws) {
 			h = mw(h)
