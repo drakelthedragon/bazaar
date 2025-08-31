@@ -36,9 +36,43 @@ func NewServeMux(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *sl
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { mux.m.ServeHTTP(w, r) }
 
-// Handle registers the handler for the given pattern and responds with the [Responder] provided in [NewServeMux].
+// Handle registers the handler for the given pattern and responding with the [Responder] provided in [NewServeMux].
 func (mux *ServeMux) Handle(pattern string, handler func(Responder) Handler) {
 	mux.m.Handle(pattern, handler(mux.r))
+}
+
+func (mux *ServeMux) handle(method, pattern string, handler func(Responder) Handler) {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+	default:
+		panic(fmt.Errorf("invalid method %q", method))
+	}
+	mux.Handle(method+" "+pattern, handler)
+}
+
+// Get registers a GET handler for the given pattern responding with the [Responder] provided in [NewServeMux].
+func (mux *ServeMux) Get(pattern string, handler func(Responder) Handler) {
+	mux.handle(http.MethodGet, pattern, handler)
+}
+
+// Post registers a POST handler for the given pattern responding with the [Responder] provided in [NewServeMux].
+func (mux *ServeMux) Post(pattern string, handler func(Responder) Handler) {
+	mux.handle(http.MethodPost, pattern, handler)
+}
+
+// Put registers a PUT handler for the given pattern responding with the [Responder] provided in [NewServeMux].
+func (mux *ServeMux) Put(pattern string, handler func(Responder) Handler) {
+	mux.handle(http.MethodPut, pattern, handler)
+}
+
+// Delete registers a DELETE handler for the given pattern responding with the [Responder] provided in [NewServeMux].
+func (mux *ServeMux) Delete(pattern string, handler func(Responder) Handler) {
+	mux.handle(http.MethodDelete, pattern, handler)
+}
+
+// Patch registers a PATCH handler for the given pattern responding with the [Responder] provided in [NewServeMux].
+func (mux *ServeMux) Patch(pattern string, handler func(Responder) Handler) {
+	mux.handle(http.MethodPatch, pattern, handler)
 }
 
 // Responder provides helpers to write HTTP responses.
