@@ -78,20 +78,26 @@ func (mux *ServeMux) Patch(pattern string, handler func(Responder) Handler) {
 // Group creates a new [ServeMux] with the given prefix and middlewares.
 func (mux *ServeMux) Group(prefix string, mws ...Middleware) *ServeMux {
 	if prefix == "" {
-		return mux
+		panic("ServeMux.Group: empty prefix")
 	}
 
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
 	}
 
-	prefix = strings.TrimPrefix(prefix, "/")
+	prefix = strings.TrimRight(prefix, "/")
 
 	child := &ServeMux{
 		m:   http.NewServeMux(),
 		r:   mux.r,
 		mws: append(append([]Middleware{}, mux.mws...), mws...),
 	}
+
+	mux.m.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
+		rr := r.Clone(r.Context())
+		rr.URL.Path = "/"
+		child.ServeHTTP(w, rr)
+	})
 
 	mux.m.Handle(prefix+"/", http.StripPrefix(prefix, child))
 
