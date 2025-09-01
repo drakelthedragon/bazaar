@@ -102,7 +102,7 @@ func (ro *Router) wrap(h http.Handler) http.Handler {
 }
 
 func (ro *Router) handle(method, pattern string, handler func(Responder) Handler) {
-	ro.m.Handle(method+" "+ro.prefix+"/"+strings.Trim(pattern, "/"), ro.wrap(handler(ro.r)))
+	ro.m.Handle(method+" "+strings.TrimRight(ro.prefix+"/"+strings.Trim(pattern, "/"), "/"), ro.wrap(handler(ro.r)))
 }
 
 // Responder provides helpers to write HTTP responses.
