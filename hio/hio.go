@@ -24,103 +24,84 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Middleware is a function that wraps a [http.Handler] with additional functionality.
 type Middleware func(http.Handler) http.Handler
 
-// ServeMux adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
-type ServeMux struct {
-	m   *http.ServeMux
-	r   Responder
-	mws []Middleware
+// Router adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
+type Router struct {
+	m      *http.ServeMux
+	r      Responder
+	prefix string
+	mws    []Middleware
 }
 
-// NewServeMux returns a new [ServeMux] that logs errors using the provided logger and function.
-func NewServeMux(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog.Logger, error)) *ServeMux {
-	return &ServeMux{
+// NewRouter returns a new [Router] that logs errors using the provided logger and function.
+func NewRouter(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog.Logger, error)) *Router {
+	return &Router{
 		m: http.NewServeMux(),
 		r: NewErrorLoggingResponder(l, fn),
 	}
 }
 
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
-func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { mux.m.ServeHTTP(w, r) }
+func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) { ro.m.ServeHTTP(w, r) }
 
-// Use adds the given middlewares to the [ServeMux].
-func (mux *ServeMux) Use(mws ...Middleware) { mux.mws = append(mux.mws, mws...) }
-
-// Handle registers the handler for the given pattern and responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Handle(pattern string, handler func(Responder) Handler) {
-	mux.m.Handle(pattern, chain(handler(mux.r), mux.mws...))
+// Handle registers the handler for the given pattern and method responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Handle(method, pattern string, handler func(Responder) Handler) {
+	ro.handle(method+" "+ro.prefix+pattern, ro.wrap(handler(ro.r)))
 }
 
-// Get registers a GET handler for the given pattern responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Get(pattern string, handler func(Responder) Handler) {
-	mux.handle(http.MethodGet, pattern, handler)
+// Get registers a GET handler for the given pattern responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Get(pattern string, handler func(Responder) Handler) {
+	ro.Handle(http.MethodGet, pattern, handler)
 }
 
-// Post registers a POST handler for the given pattern responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Post(pattern string, handler func(Responder) Handler) {
-	mux.handle(http.MethodPost, pattern, handler)
+// Post registers a POST handler for the given pattern responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Post(pattern string, handler func(Responder) Handler) {
+	ro.Handle(http.MethodPost, pattern, handler)
 }
 
-// Put registers a PUT handler for the given pattern responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Put(pattern string, handler func(Responder) Handler) {
-	mux.handle(http.MethodPut, pattern, handler)
+// Put registers a PUT handler for the given pattern responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Put(pattern string, handler func(Responder) Handler) {
+	ro.Handle(http.MethodPut, pattern, handler)
 }
 
-// Delete registers a DELETE handler for the given pattern responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Delete(pattern string, handler func(Responder) Handler) {
-	mux.handle(http.MethodDelete, pattern, handler)
+// Delete registers a DELETE handler for the given pattern responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Delete(pattern string, handler func(Responder) Handler) {
+	ro.Handle(http.MethodDelete, pattern, handler)
 }
 
-// Patch registers a PATCH handler for the given pattern responding with the [Responder] provided in [NewServeMux].
-func (mux *ServeMux) Patch(pattern string, handler func(Responder) Handler) {
-	mux.handle(http.MethodPatch, pattern, handler)
+// Patch registers a PATCH handler for the given pattern responding with the [Responder] provided in [NewRouter].
+func (ro *Router) Patch(pattern string, handler func(Responder) Handler) {
+	ro.Handle(http.MethodPatch, pattern, handler)
 }
 
-// Group creates a new [ServeMux] with the given prefix and middlewares.
-func (mux *ServeMux) Group(prefix string, mws ...Middleware) *ServeMux {
-	if prefix == "" {
-		panic("ServeMux.Group: empty prefix")
+// Group creates a new [Router] with the given prefix and middlewares.
+func (ro *Router) Group(prefix string, mws ...Middleware) *Router {
+	r := &Router{
+		m:      ro.m,
+		r:      ro.r,
+		prefix: ro.prefix + strings.TrimRight(prefix, "/"),
+		mws:    make([]Middleware, len(ro.mws), len(ro.mws)+len(mws)),
 	}
 
-	if !strings.HasPrefix(prefix, "/") {
-		prefix = "/" + prefix
-	}
+	copy(r.mws, ro.mws)
 
-	prefix = strings.TrimRight(prefix, "/")
+	r.mws = append(r.mws, mws...)
 
-	child := &ServeMux{
-		m:   http.NewServeMux(),
-		r:   mux.r,
-		mws: append(append([]Middleware{}, mux.mws...), mws...),
-	}
-
-	mux.m.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
-		rr := r.Clone(r.Context())
-		rr.URL.Path = "/"
-		child.ServeHTTP(w, rr)
-	})
-
-	mux.m.Handle(prefix+"/", http.StripPrefix(prefix, child))
-
-	return child
+	return r
 }
 
-func chain(h http.Handler, mws ...Middleware) http.Handler {
-	if len(mws) > 0 {
-		for _, mw := range slices.Backward(mws) {
+// Use adds the given middlewares to the [Router].
+func (ro *Router) Use(mws ...Middleware) { ro.mws = append(ro.mws, mws...) }
+
+func (ro *Router) wrap(h http.Handler) http.Handler {
+	if len(ro.mws) > 0 {
+		for _, mw := range slices.Backward(ro.mws) {
 			h = mw(h)
 		}
 	}
 	return h
 }
 
-func (mux *ServeMux) handle(method, pattern string, handler func(Responder) Handler) {
-	switch method {
-	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
-	default:
-		panic(fmt.Errorf("invalid method %q", method))
-	}
-	mux.Handle(method+" "+pattern, handler)
-}
+func (ro *Router) handle(pattern string, handler http.Handler) { ro.m.Handle(pattern, handler) }
 
 // Responder provides helpers to write HTTP responses.
 type Responder struct{ err func(error) Handler }
@@ -213,4 +194,19 @@ func MaxBytesReader(w http.ResponseWriter, rc io.ReadCloser, max int64) io.ReadC
 	}
 
 	return http.MaxBytesReader(w, rc, max)
+}
+
+// TrailingSlashRedirector is a middleware that redirects requests with a trailing slash to the same URL without the trailing slash.
+func TrailingSlashRedirector(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
+			path := strings.TrimRight(r.URL.Path, "/")
+			if r.URL.RawQuery != "" {
+				path += "?" + r.URL.RawQuery
+			}
+			w.Header()["Content-Type"] = nil
+			http.Redirect(w, r, path, http.StatusPermanentRedirect)
+			return
+		}
+	})
 }
