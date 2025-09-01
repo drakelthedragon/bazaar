@@ -45,32 +45,32 @@ func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) { ro.m.Serve
 
 // Handle registers the handler for the given pattern and method responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Handle(method, pattern string, handler func(Responder) Handler) {
-	ro.handle(method+" "+ro.prefix+pattern, ro.wrap(handler(ro.r)))
+	ro.handle(strings.ToUpper(method), pattern, handler)
 }
 
 // Get registers a GET handler for the given pattern responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Get(pattern string, handler func(Responder) Handler) {
-	ro.Handle(http.MethodGet, pattern, handler)
+	ro.handle(http.MethodGet, pattern, handler)
 }
 
 // Post registers a POST handler for the given pattern responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Post(pattern string, handler func(Responder) Handler) {
-	ro.Handle(http.MethodPost, pattern, handler)
+	ro.handle(http.MethodPost, pattern, handler)
 }
 
 // Put registers a PUT handler for the given pattern responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Put(pattern string, handler func(Responder) Handler) {
-	ro.Handle(http.MethodPut, pattern, handler)
+	ro.handle(http.MethodPut, pattern, handler)
 }
 
 // Delete registers a DELETE handler for the given pattern responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Delete(pattern string, handler func(Responder) Handler) {
-	ro.Handle(http.MethodDelete, pattern, handler)
+	ro.handle(http.MethodDelete, pattern, handler)
 }
 
 // Patch registers a PATCH handler for the given pattern responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Patch(pattern string, handler func(Responder) Handler) {
-	ro.Handle(http.MethodPatch, pattern, handler)
+	ro.handle(http.MethodPatch, pattern, handler)
 }
 
 // Group creates a new [Router] with the given prefix and middlewares.
@@ -78,7 +78,7 @@ func (ro *Router) Group(prefix string, mws ...Middleware) *Router {
 	r := &Router{
 		m:      ro.m,
 		r:      ro.r,
-		prefix: ro.prefix + strings.TrimRight(prefix, "/"),
+		prefix: ro.prefix + "/" + strings.Trim(prefix, "/"),
 		mws:    make([]Middleware, len(ro.mws), len(ro.mws)+len(mws)),
 	}
 
@@ -101,7 +101,9 @@ func (ro *Router) wrap(h http.Handler) http.Handler {
 	return h
 }
 
-func (ro *Router) handle(pattern string, handler http.Handler) { ro.m.Handle(pattern, handler) }
+func (ro *Router) handle(method, pattern string, handler func(Responder) Handler) {
+	ro.m.Handle(method+" "+ro.prefix+"/"+strings.Trim(pattern, "/"), ro.wrap(handler(ro.r)))
+}
 
 // Responder provides helpers to write HTTP responses.
 type Responder struct{ err func(error) Handler }
