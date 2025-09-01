@@ -21,8 +21,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Middleware is a function that wraps a [http.Handler] with additional functionality.
-type Middleware func(http.Handler) http.Handler
+// Middleware is an alias for a function that takes and returns an [http.Handler].
+type Middleware = func(http.Handler) http.Handler
 
 // Router adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
 type Router struct {
