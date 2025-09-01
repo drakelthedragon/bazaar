@@ -201,14 +201,16 @@ func MaxBytesReader(w http.ResponseWriter, rc io.ReadCloser, max int64) io.ReadC
 // TrailingSlashRedirector is a middleware that redirects requests with a trailing slash to the same URL without the trailing slash.
 func TrailingSlashRedirector(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
-			path := strings.TrimRight(r.URL.Path, "/")
-			if r.URL.RawQuery != "" {
-				path += "?" + r.URL.RawQuery
+		if len(r.URL.Path) > 1 && strings.HasSuffix(r.URL.Path, "/") {
+			u := *r.URL
+			u.Path = strings.TrimRight(r.URL.Path, "/")
+			if u.Path == "" {
+				u.Path = "/"
 			}
 			w.Header()["Content-Type"] = nil
-			http.Redirect(w, r, path, http.StatusPermanentRedirect)
+			http.Redirect(w, r, u.String(), http.StatusPermanentRedirect)
 			return
 		}
+		next.ServeHTTP(w, r)
 	})
 }
