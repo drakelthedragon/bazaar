@@ -26,10 +26,12 @@ type Middleware = func(http.Handler) http.Handler
 
 // Router adapts [http.ServeMux] to use [Handler] with an error logging [Responder].
 type Router struct {
-	m      *http.ServeMux
-	r      Responder
-	prefix string
-	mws    []Middleware
+	m                *http.ServeMux
+	r                Responder
+	prefix           string
+	mws              []Middleware
+	NotFound         error
+	MethodNotAllowed error
 }
 
 // NewRouter returns a new [Router] that logs errors using the provided logger and function.
@@ -41,7 +43,21 @@ func NewRouter(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog
 }
 
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
-func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) { ro.m.ServeHTTP(w, r) }
+func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h, p := ro.m.Handler(r); p == "" {
+		si := &statusInterceptor{ResponseWriter: w}
+		h.ServeHTTP(si, r)
+		switch si.status {
+		case http.StatusNotFound:
+			ro.r.Error("%w", ro.NotFound).ServeHTTP(w, r)
+		case http.StatusMethodNotAllowed:
+			ro.r.Error("%w", ro.MethodNotAllowed).ServeHTTP(w, r)
+		}
+		return
+	}
+
+	ro.m.ServeHTTP(w, r)
+}
 
 // Handle registers the handler for the given pattern and method responding with the [Responder] provided in [NewRouter].
 func (ro *Router) Handle(method, pattern string, handler func(Responder) Handler) {
@@ -114,12 +130,14 @@ func NewResponder(err func(error) Handler) Responder { return Responder{err: err
 
 // NewErrorLoggingResponder returns a new [Responder] that logs errors using the provided logger and function.
 func NewErrorLoggingResponder(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog.Logger, error)) Responder {
-	return Responder{err: func(err error) Handler {
-		return func(w http.ResponseWriter, r *http.Request) Handler {
-			fn(w, r, l, err)
-			return nil
-		}
-	}}
+	return Responder{
+		err: func(err error) Handler {
+			return func(w http.ResponseWriter, r *http.Request) Handler {
+				fn(w, r, l, err)
+				return nil
+			}
+		},
+	}
 }
 
 // Error responds with a formatted error message.
@@ -214,3 +232,16 @@ func TrailingSlashRedirector(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+type Error struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type statusInterceptor struct {
+	http.ResponseWriter
+	status int
+}
+
+func (i *statusInterceptor) WriteHeader(status int)      { i.status = status }
+func (i *statusInterceptor) Write(p []byte) (int, error) { return len(p), nil }
