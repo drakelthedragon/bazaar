@@ -44,8 +44,7 @@ func NewRouter(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog
 
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
 func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h, p := ro.m.Handler(r)
-	if p == "" {
+	if h, p := ro.m.Handler(r); p == "" {
 		si := &statusInterceptor{ResponseWriter: w}
 		h.ServeHTTP(si, r)
 		switch si.status {
@@ -54,9 +53,10 @@ func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case http.StatusMethodNotAllowed:
 			h = ro.r.Error("The requested method was %w.", ro.MethodNotAllowed)
 		}
-		h = ro.wrap(h)
+		ro.wrap(h).ServeHTTP(w, r)
+		return
 	}
-	h.ServeHTTP(w, r)
+	ro.m.ServeHTTP(w, r)
 }
 
 // Handle registers the handler for the given pattern and method responding with the [Responder] provided in [NewRouter].
