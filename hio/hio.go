@@ -44,19 +44,19 @@ func NewRouter(l *slog.Logger, fn func(http.ResponseWriter, *http.Request, *slog
 
 // ServeHTTP dispatches the request to the handler whose pattern most closely matches the request URL.
 func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h, p := ro.m.Handler(r); p == "" {
+	h, p := ro.m.Handler(r)
+	if p == "" {
 		si := &statusInterceptor{ResponseWriter: w}
 		h.ServeHTTP(si, r)
 		switch si.status {
 		case http.StatusNotFound:
-			ro.r.Error("%w", ro.NotFound).ServeHTTP(w, r)
+			h = ro.r.Error("The requested path was %w.", ro.NotFound)
 		case http.StatusMethodNotAllowed:
-			ro.r.Error("%w", ro.MethodNotAllowed).ServeHTTP(w, r)
+			h = ro.r.Error("The requested method was %w.", ro.MethodNotAllowed)
 		}
-		return
+		h = ro.wrap(h)
 	}
-
-	ro.m.ServeHTTP(w, r)
+	h.ServeHTTP(w, r)
 }
 
 // Handle registers the handler for the given pattern and method responding with the [Responder] provided in [NewRouter].
@@ -231,11 +231,6 @@ func TrailingSlashRedirector(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
 }
 
 type statusInterceptor struct {
