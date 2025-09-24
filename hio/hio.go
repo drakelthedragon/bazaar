@@ -49,9 +49,9 @@ func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(si, r)
 		switch si.status {
 		case http.StatusNotFound:
-			h = ro.r.Error("The requested path was %w.", ro.NotFound)
+			h = ro.r.Errorf("The requested path was %w.", ro.NotFound)
 		case http.StatusMethodNotAllowed:
-			h = ro.r.Error("The requested method was %w.", ro.MethodNotAllowed)
+			h = ro.r.Errorf("The requested method was %w.", ro.MethodNotAllowed)
 		}
 		ro.wrap(h).ServeHTTP(w, r)
 		return
@@ -140,8 +140,11 @@ func NewErrorLoggingResponder(l *slog.Logger, fn func(http.ResponseWriter, *http
 	}
 }
 
-// Error responds with a formatted error message.
-func (rs Responder) Error(format string, args ...any) Handler {
+// Error responds with a error message.
+func (rs Responder) Error(err error) Handler { return rs.err(err) }
+
+// Errorf responds with a formatted error message.
+func (rs Responder) Errorf(format string, args ...any) Handler {
 	return rs.err(fmt.Errorf(format, args...))
 }
 
@@ -167,7 +170,7 @@ func (rs Responder) Text(code int, message string) Handler {
 func (rs Responder) JSON(code int, from any) Handler {
 	data, err := json.Marshal(from)
 	if err != nil {
-		return rs.Error("encoding JSON: %w", err)
+		return rs.Errorf("encoding JSON: %w", err)
 	}
 	return func(w http.ResponseWriter, r *http.Request) Handler {
 		w.Header().Set("Content-Type", "application/json")
