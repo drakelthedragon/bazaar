@@ -49,9 +49,9 @@ func (ro *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(si, r)
 		switch si.status {
 		case http.StatusNotFound:
-			h = ro.r.Errorf("The requested path was %w.", ro.NotFound)
+			h = ro.r.Errorf("The requested path was %w", ro.NotFound)
 		case http.StatusMethodNotAllowed:
-			h = ro.r.Errorf("The requested method was %w.", ro.MethodNotAllowed)
+			h = ro.r.Errorf("The requested method was %w", ro.MethodNotAllowed)
 		}
 		ro.wrap(h).ServeHTTP(w, r)
 		return
